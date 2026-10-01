@@ -1,0 +1,99 @@
+# The whole observability stack, in one file.
+#
+# Four services, and the interesting thing is what connects them: nothing in
+# any config file names an IP address. Docker's embedded DNS resolves service
+# names on the shared network, so `api:8000` in prometheus.yml works because
+# the service below is called `api`. Rename it and the scrape breaks — which
+# is a useful thing to know before you rename it.
+
+name: ddm501-lab04
+
+services:
+  api:
+    build: .
+    container_name: ddm501-api
+    ports:
+      - "8000:8000"
+    volumes:
+      # Read-only. The service loads the model and the drift reference; it has
+      # no business writing to either, and :ro makes that structural rather
+      # than a matter of trust.
+      - ./models:/app/models:ro
+      - ./data:/app/data:ro
+    environment:
+      - PYTHONPATH=/app
+    networks:
+      - monitoring
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v2.51.2
+    container_name: ddm501-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/prometheus/alerts:/etc/prometheus/alerts:ro
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=7d"
+      # Enables POST /-/reload, so a config change does not need a restart.
+      - "--web.enable-lifecycle"
+    networks:
+      - monitoring
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:10.4.2
+    container_name: ddm501-grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      # Provisioning: the datasource and the dashboards come from files in
+      # version control, not from someone clicking through the UI once.
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    environment:
+      # Lab credentials. Obviously not production ones — and the fact that
+      # they are in plain text in a compose file is exactly why production
+      # credentials belong in a secret store instead.
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
+    networks:
+      - monitoring
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+  node-exporter:
+    image: prom/node-exporter:v1.7.0
+    container_name: ddm501-node-exporter
+    ports:
+      - "9100:9100"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - "--path.procfs=/host/proc"
+      - "--path.sysfs=/host/sys"
+      - "--path.rootfs=/rootfs"
+    networks:
+      - monitoring
+    restart: unless-stopped
+
+networks:
+  monitoring:
+    driver: bridge
+
+volumes:
+  prometheus_data:
+  grafana_data:

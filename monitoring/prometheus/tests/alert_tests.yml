@@ -1,0 +1,234 @@
+# Unit tests for the alert rules — run by `promtool test rules`.
+#
+# Alert rules are code that only executes during an incident. That is the
+# worst possible time to discover a typo in a PromQL expression or a `for:`
+# window that never elapses. These tests feed synthetic time series into the
+# rule evaluator and assert exactly which alerts fire and when.
+#
+# The `input_series` syntax is `values: 'a+bxN'` — start at a, add b, N times,
+# one sample per `interval`. `_` is a gap (no sample), which is how you
+# simulate a target going away.
+#
+# Run:
+#     promtool test rules monitoring/prometheus/tests/alert_tests.yml
+
+rule_files:
+  - ../alerts/api_alerts.yml
+  - ../alerts/ml_alerts.yml
+
+evaluation_interval: 1m
+
+tests:
+  # ===========================================================================
+  - interval: 1m
+    name: A target that stops responding pages after one minute
+    input_series:
+      - series: 'up{job="credit-risk-api", instance="api:8000"}'
+        values: "1 1 1 0 0 0 0 0"
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: ServiceDown
+        exp_alerts: []          # up==0 from t=3m, so `for: 1m` has not elapsed
+      - eval_time: 4m
+        alertname: ServiceDown
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              job: credit-risk-api
+              instance: api:8000
+            exp_annotations:
+              summary: "Credit risk API is not responding to scrapes"
+              description: >-
+                Prometheus has failed to scrape the API for 1 minute. Check the
+                container is running and the port mapping is intact. Note that a
+                failed scrape is not proof the service is down — it is proof that
+                Prometheus cannot reach it, which may be a network problem.
+
+  # ===========================================================================
+  - interval: 1m
+    name: A live process with no model loaded is caught
+    input_series:
+      - series: "ml_model_loaded"
+        values: "1 1 0 0 0 0"
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: ModelNotLoaded
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: ModelNotLoaded
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+            exp_annotations:
+              summary: "Service is up but no model is loaded"
+              description: >-
+                The process is alive and answering /metrics, so a naive liveness
+                check passes, but every /predict is returning 503. This is the
+                failure mode that a health check on the wrong endpoint hides.
+
+  # ===========================================================================
+  - interval: 1m
+    name: Drift crosses the moderate band and then the significant one
+    input_series:
+      # 0.02 climbing by 0.02/min: crosses 0.10 at t=4m, 0.25 at t≈12m.
+      - series: "ml_drift_score"
+        values: "0.02+0.02x40"
+    alert_rule_test:
+      # At 10m the score is 0.22 — moderate for 6 minutes, not yet 15.
+      - eval_time: 10m
+        alertname: ModerateFeatureDrift
+        exp_alerts: []
+      # At 20m it has been above 0.10 for 16 minutes.
+      - eval_time: 20m
+        alertname: ModerateFeatureDrift
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              signal: leading
+            exp_annotations:
+              summary: "Input drift in the moderate band (PSI 0.420)"
+              description: >-
+                The applicants arriving no longer match the training population.
+                The model is not broken and its outputs are still well-formed;
+                this is the earliest signal available, weeks before any accuracy
+                number could arrive. Check ml_feature_drift_psi by feature to see
+                which one moved, and whether it moved for a reason you already
+                know about (a new marketing channel, a seasonal effect).
+      # Significant needs 0.25 sustained for 15m: above at 12m, fires at 27m+.
+      - eval_time: 25m
+        alertname: SignificantFeatureDrift
+        exp_alerts: []
+      - eval_time: 30m
+        alertname: SignificantFeatureDrift
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              signal: leading
+            exp_annotations:
+              summary: "Input drift is significant (PSI 0.620)"
+              description: >-
+                Retraining is likely warranted. Before triggering it, confirm the
+                drift is real and not an artefact: a single upstream system
+                sending a default value for a field produces exactly this
+                signature and is fixed in the pipeline, not in the model.
+
+  # ===========================================================================
+  - interval: 1m
+    name: Stable drift never fires, however long it runs
+    input_series:
+      - series: "ml_drift_score"
+        values: "0.03+0.000x60"
+    alert_rule_test:
+      - eval_time: 55m
+        alertname: ModerateFeatureDrift
+        exp_alerts: []
+      - eval_time: 55m
+        alertname: SignificantFeatureDrift
+        exp_alerts: []
+
+  # ===========================================================================
+  - interval: 1m
+    name: An undersized window is reported, not silently trusted
+    input_series:
+      - series: "ml_drift_window_size"
+        values: "40+2x60"
+    alert_rule_test:
+      # 40 rising by 2/min reaches 200 at t=80m, so it is under-sized
+      # throughout this test and the alert fires once `for: 30m` elapses.
+      - eval_time: 20m
+        alertname: DriftWindowTooSmall
+        exp_alerts: []
+      - eval_time: 40m
+        alertname: DriftWindowTooSmall
+        exp_alerts:
+          - exp_labels:
+              severity: info
+            exp_annotations:
+              summary: "Drift window has fewer than 200 requests"
+              description: >-
+                Not a model problem — a statistics problem. The drift number
+                reported below this size is noise, and the service reports it as
+                insufficient rather than as zero. This alert exists so that
+                "drift is fine" is never inferred from "drift is not being
+                measured".
+
+  # ===========================================================================
+  - interval: 1m
+    name: A widening selection-rate gap is critical
+    input_series:
+      - series: "ml_fairness_gap"
+        values: "0.02 0.02 0.30+0x40"
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: FairnessGapWidened
+        exp_alerts: []          # above threshold, `for: 20m` not elapsed
+      - eval_time: 30m
+        alertname: FairnessGapWidened
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              signal: fairness
+            exp_annotations:
+              summary: "Selection-rate gap between groups is 0.300"
+              description: >-
+                One group is being sent to review or decline at a materially
+                different rate than another. Aggregate drift and aggregate score
+                metrics can both look healthy while this fires — that is the
+                point of measuring it separately. Confirm against
+                ml_selection_rate by group before acting; a gap that reflects a
+                real change in who is applying is a different problem from a gap
+                the model introduced.
+
+  # ===========================================================================
+  - interval: 1m
+    name: Error rate is a ratio, so volume alone does not trigger it
+    input_series:
+      # 100 requests/min total, 1 of them a 500: 1%, below the 5% threshold.
+      - series: 'http_requests_total{job="credit-risk-api", status="200"}'
+        values: "0+99x30"
+      - series: 'http_requests_total{job="credit-risk-api", status="500"}'
+        values: "0+1x30"
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: HighErrorRate
+        exp_alerts: []
+
+  - interval: 1m
+    name: The same rule fires on a low-volume service with a bad ratio
+    input_series:
+      # Only 10 requests/min, but 2 of them fail: 20%.
+      - series: 'http_requests_total{job="credit-risk-api", status="200"}'
+        values: "0+8x30"
+      - series: 'http_requests_total{job="credit-risk-api", status="500"}'
+        values: "0+2x30"
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: HighErrorRate
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+            exp_annotations:
+              summary: "Over 5% of requests are failing with 5xx"
+              description: >-
+                Computed as a ratio of rates rather than a raw count, so it means
+                the same thing at 10 rps and at 1000 rps. Check
+                ml_prediction_errors_total by error_type for the cause.
+
+  # ===========================================================================
+  - interval: 1m
+    name: Silence is an alert too
+    input_series:
+      - series: 'http_requests_total{job="credit-risk-api", status="200"}'
+        values: "500+0x40"      # constant: rate() is zero, nobody is calling
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: NoTraffic
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "The service has served no requests for 10 minutes"
+              description: >-
+                Silence is ambiguous: either nobody is calling, or something
+                upstream is failing to route. Both are worth knowing about, and
+                neither shows up on an error-rate dashboard.

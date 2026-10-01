@@ -1,0 +1,157 @@
+# TASK 12 — model-level alert rules.
+#
+# api_alerts.yml is the worked example: read it first. Every rule there has
+#   - an `expr` that means the same thing at 10 rps and at 1000 rps,
+#   - a `for:` longer than one scrape, so a single bad sample cannot page you,
+#   - a `severity` label,
+#   - a `summary` saying what is wrong and a `description` saying what to do
+#     about it. An alert whose recipient has to reverse-engineer the intent at
+#     3am is an alert that gets ignored by the second week.
+#
+# These rules are different in kind from the ones in api_alerts.yml: none of
+# them proves the model is wrong. Each is a reason to LOOK.
+#
+# Write the seven rules below. tests/test_config_files.py checks the structure;
+# monitoring/prometheus/tests/alert_tests.yml checks the behaviour, and you can
+# run it before you have a Prometheus instance at all:
+#
+#     cd monitoring/prometheus/tests && promtool test rules alert_tests.yml
+#
+# The metric names you need are all in app/metrics.py.
+
+groups:
+  - name: ml_drift
+    rules:
+      - alert: ModerateFeatureDrift
+        expr: ml_drift_score > 0.10
+        for: 15m
+        labels:
+          severity: warning
+          signal: leading
+        annotations:
+          summary: 'Input drift in the moderate band (PSI {{ $value | printf "%.3f" }})'
+          description: >-
+            The applicants arriving no longer match the training population.
+            The model is not broken and its outputs are still well-formed;
+            this is the earliest signal available, weeks before any accuracy
+            number could arrive. Check ml_feature_drift_psi by feature to see
+            which one moved, and whether it moved for a reason you already
+            know about (a new marketing channel, a seasonal effect).
+
+      - alert: SignificantFeatureDrift
+        expr: ml_drift_score > 0.25
+        for: 15m
+        labels:
+          severity: critical
+          signal: leading
+        annotations:
+          summary: 'Input drift is significant (PSI {{ $value | printf "%.3f" }})'
+          description: >-
+            Retraining is likely warranted. Before triggering it, confirm the
+            drift is real and not an artefact: a single upstream system
+            sending a default value for a field produces exactly this
+            signature and is fixed in the pipeline, not in the model.
+
+      - alert: DriftWindowTooSmall
+        expr: ml_drift_window_size < 200
+        for: 30m
+        labels:
+          severity: info
+        annotations:
+          summary: "Drift window has fewer than 200 requests"
+          description: >-
+            Not a model problem — a statistics problem. The drift number
+            reported below this size is noise, and the service reports it as
+            insufficient rather than as zero. This alert exists so that
+            "drift is fine" is never inferred from "drift is not being
+            measured".
+      # TODO: ModerateFeatureDrift
+      #   ml_drift_score above the conventional 0.10 band for 15m, warning.
+      #   Include labels severity=warning and signal=leading.
+      #   The summary should print the value: {{ $value | printf "%.3f" }}
+
+      # TODO: SignificantFeatureDrift
+      #   The same metric above 0.25 for 15m, critical, signal=leading.
+
+      # TODO: DriftWindowTooSmall
+      #   ml_drift_window_size below 200 for 30m, severity info.
+      #   This exists so that "drift is fine" is never inferred from "drift
+      #   is not being measured".
+
+  - name: ml_behaviour
+    rules:
+      - alert: DecisionMixShift
+        expr: |
+          sum(rate(ml_decisions_total{decision="DECLINE"}[30m]))
+          /
+          clamp_min(sum(rate(ml_decisions_total[30m])), 0.001)
+          > 0.20
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "More than 20% of applications are being declined"
+          description: >-
+            The decline share is materially above its normal baseline. Check
+            the score distribution and per-feature PSI before changing a
+            threshold; the cause may be population drift rather than a service fault.
+
+      - alert: FairnessGapWidened
+        expr: ml_fairness_gap > 0.10
+        for: 20m
+        labels:
+          severity: critical
+          signal: fairness
+        annotations:
+          summary: 'Selection-rate gap between groups is {{ $value | printf "%.3f" }}'
+          description: >-
+            One group is being sent to review or decline at a materially
+            different rate than another. Aggregate drift and aggregate score
+            metrics can both look healthy while this fires — that is the
+            point of measuring it separately. Confirm against
+            ml_selection_rate by group before acting; a gap that reflects a
+            real change in who is applying is a different problem from a gap
+            the model introduced.
+
+      - alert: PredictionErrorsRising
+        expr: sum(rate(ml_prediction_errors_total[5m])) > 0.1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Model prediction errors exceed 0.1 per second"
+          description: >-
+            Failures are occurring inside model scoring. Break down
+            ml_prediction_errors_total by error_type and inspect the API logs
+            before retrying or rolling back the current model artifact.
+
+      - alert: ExplanationLatencyHigh
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum(rate(ml_explain_duration_seconds_bucket[5m])) by (le)
+          ) > 1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "p95 explanation latency is above one second"
+          description: >-
+            SHAP explanation time is high while prediction latency is measured
+            separately. Check CPU saturation and explanation traffic before
+            reducing the explanation detail or scaling the service.
+      # TODO: DecisionMixShift
+      #   The DECLINE share of ml_decisions_total over 30m, above 20%, for 30m.
+      #   Use a ratio of rates, not a raw count. Baseline here is about 8%.
+
+      # TODO: FairnessGapWidened
+      #   ml_fairness_gap above 0.10 for 20m, critical, signal=fairness.
+      #   Aggregate drift and aggregate score can both look healthy while
+      #   this one moves — which is the whole reason it is a separate metric.
+
+      # TODO: PredictionErrorsRising
+      #   rate of ml_prediction_errors_total above 0.1/s for 5m, critical.
+      #   Distinct from HTTP 5xx: these are failures inside the model call.
+
+      # TODO: ExplanationLatencyHigh
+      #   p95 of ml_explain_duration_seconds above 1s for 10m, warning.

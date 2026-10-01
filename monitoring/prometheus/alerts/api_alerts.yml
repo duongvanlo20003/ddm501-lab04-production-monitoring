@@ -1,0 +1,84 @@
+# Service-level alerts: the four golden signals, minus saturation.
+#
+# Every rule here follows the same discipline:
+#   `for:` is longer than one scrape, so a single bad sample cannot page you.
+#   `severity` distinguishes "wake someone" from "look at it tomorrow".
+#   `summary` says what is wrong; `description` says what to do about it.
+# An alert without the last line is an alert whose recipient has to
+# reverse-engineer the intent at 3am.
+
+groups:
+  - name: api_availability
+    rules:
+      - alert: ServiceDown
+        expr: up{job="credit-risk-api"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Credit risk API is not responding to scrapes"
+          description: >-
+            Prometheus has failed to scrape the API for 1 minute. Check the
+            container is running and the port mapping is intact. Note that a
+            failed scrape is not proof the service is down — it is proof that
+            Prometheus cannot reach it, which may be a network problem.
+
+      - alert: ModelNotLoaded
+        expr: ml_model_loaded == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Service is up but no model is loaded"
+          description: >-
+            The process is alive and answering /metrics, so a naive liveness
+            check passes, but every /predict is returning 503. This is the
+            failure mode that a health check on the wrong endpoint hides.
+
+  - name: api_latency_and_errors
+    rules:
+      - alert: HighErrorRate
+        expr: |
+          sum(rate(http_requests_total{job="credit-risk-api",status=~"5.."}[5m]))
+          /
+          sum(rate(http_requests_total{job="credit-risk-api"}[5m]))
+          > 0.05
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Over 5% of requests are failing with 5xx"
+          description: >-
+            Computed as a ratio of rates rather than a raw count, so it means
+            the same thing at 10 rps and at 1000 rps. Check
+            ml_prediction_errors_total by error_type for the cause.
+
+      - alert: HighLatencyP95
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum(rate(http_request_duration_seconds_bucket{job="credit-risk-api"}[5m])) by (le)
+          ) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "p95 request latency above 500ms"
+          description: >-
+            The quantile is estimated from bucket boundaries, so it is only as
+            precise as the buckets: with a boundary at 0.5, this fires on a
+            genuine crossing rather than on interpolation noise. Compare
+            ml_prediction_duration_seconds to see whether the model or the
+            HTTP layer is responsible.
+
+      - alert: NoTraffic
+        expr: sum(rate(http_requests_total{job="credit-risk-api"}[10m])) == 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "The service has served no requests for 10 minutes"
+          description: >-
+            Silence is ambiguous: either nobody is calling, or something
+            upstream is failing to route. Both are worth knowing about, and
+            neither shows up on an error-rate dashboard.

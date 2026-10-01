@@ -1,0 +1,131 @@
+{
+  "normal": {
+    "requests": 400,
+    "http_status": {
+      "200": 400
+    },
+    "latency_ms": {
+      "p50": 23.095799959264696,
+      "p95": 26.051900000311434,
+      "max": 89.92349996697158
+    },
+    "score_mean": 0.23552475,
+    "score_median": 0.1632,
+    "decisions": {
+      "REVIEW": 57,
+      "APPROVE": 311,
+      "DECLINE": 32
+    },
+    "decision_rates": {
+      "APPROVE": 0.7775,
+      "REVIEW": 0.1425,
+      "DECLINE": 0.08
+    },
+    "monitoring": {
+      "window_size": 400,
+      "min_window_size": 200,
+      "sufficient_data": true,
+      "feature_psi": {
+        "LIMIT_BAL": 0.015204759253802734,
+        "AGE": 0.0301326721486143,
+        "PAY_0": 0.0059094906450449305,
+        "utilisation_ratio": 0.028813018718608936,
+        "payment_ratio": 0.013118220869583532,
+        "max_delay": 0.0035574038132665095
+      },
+      "drift_score": 0.0301326721486143,
+      "drift_status": "stable",
+      "selection_rate": {
+        "1.0": 0.23448275862068965,
+        "2.0": 0.21568627450980393
+      },
+      "fairness_gap": 0.01879648411088572
+    }
+  },
+  "drifted": {
+    "requests": 400,
+    "http_status": {
+      "200": 400
+    },
+    "latency_ms": {
+      "p50": 23.16500002052635,
+      "p95": 25.837199995294213,
+      "max": 31.33909997995943
+    },
+    "score_mean": 0.58965325,
+    "score_median": 0.6398,
+    "decisions": {
+      "DECLINE": 219,
+      "APPROVE": 62,
+      "REVIEW": 119
+    },
+    "decision_rates": {
+      "APPROVE": 0.155,
+      "REVIEW": 0.2975,
+      "DECLINE": 0.5475
+    },
+    "monitoring": {
+      "window_size": 400,
+      "min_window_size": 200,
+      "sufficient_data": true,
+      "feature_psi": {
+        "LIMIT_BAL": 2.042614426072324,
+        "AGE": 1.7083895662107071,
+        "PAY_0": 0.8262139491782023,
+        "utilisation_ratio": 3.092137748685534,
+        "payment_ratio": 4.250969647777792,
+        "max_delay": 0.7824715460034717
+      },
+      "drift_score": 4.250969647777792,
+      "drift_status": "significant",
+      "selection_rate": {
+        "1.0": 0.8689655172413793,
+        "2.0": 0.8313725490196079
+      },
+      "fairness_gap": 0.03759296822177138
+    }
+  },
+  "unfair": {
+    "requests": 400,
+    "http_status": {
+      "200": 400
+    },
+    "latency_ms": {
+      "p50": 23.16790004260838,
+      "p95": 26.269700028933585,
+      "max": 31.79349994752556
+    },
+    "score_mean": 0.3966345,
+    "score_median": 0.25755,
+    "decisions": {
+      "REVIEW": 63,
+      "APPROVE": 209,
+      "DECLINE": 128
+    },
+    "decision_rates": {
+      "APPROVE": 0.5225,
+      "REVIEW": 0.1575,
+      "DECLINE": 0.32
+    },
+    "monitoring": {
+      "window_size": 400,
+      "min_window_size": 200,
+      "sufficient_data": true,
+      "feature_psi": {
+        "LIMIT_BAL": 0.015204759253802734,
+        "AGE": 0.0301326721486143,
+        "PAY_0": 0.2791178533539824,
+        "utilisation_ratio": 0.028813018718608936,
+        "payment_ratio": 0.2878810982215375,
+        "max_delay": 0.35256397182052246
+      },
+      "drift_score": 0.35256397182052246,
+      "drift_status": "significant",
+      "selection_rate": {
+        "1.0": 0.9379310344827586,
+        "2.0": 0.21568627450980393
+      },
+      "fairness_gap": 0.7222447599729547
+    }
+  }
+}

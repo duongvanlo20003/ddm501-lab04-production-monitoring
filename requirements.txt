@@ -1,0 +1,31 @@
+# Lab 4 — monitoring and production deployment.
+#
+# Versions are pinned exactly. "It worked on my machine last week" is not a
+# reproducible result, and an unpinned MLOps lab breaks silently the day
+# upstream cuts a release.
+
+# --- Service -----------------------------------------------------------------
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pydantic==2.10.4
+
+# --- Model -------------------------------------------------------------------
+scikit-learn==1.6.0
+pandas==2.2.3
+numpy==2.2.1
+joblib==1.4.2
+
+# --- Instrumentation ---------------------------------------------------------
+prometheus-client==0.21.1
+
+# --- Explanations ------------------------------------------------------------
+# shap pulls numba and llvmlite, which is why it is the slowest install here.
+shap==0.46.0
+
+# --- Tests -------------------------------------------------------------------
+pytest==8.3.4
+pytest-cov==6.0.0
+httpx==0.28.1
+
+# Config tests parse the Prometheus and Grafana files.
+PyYAML==6.0.2

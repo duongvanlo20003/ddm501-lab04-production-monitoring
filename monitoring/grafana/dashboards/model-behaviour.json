@@ -1,0 +1,105 @@
+{
+  "uid": "ddm501-model",
+  "title": "DDM501 — Model Behaviour",
+  "description": "Production model drift, decisions, fairness, and explanation cost.",
+  "tags": ["ddm501", "lab04", "model"],
+  "timezone": "browser",
+  "editable": true,
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "10s",
+  "time": {"from": "now-30m", "to": "now"},
+  "templating": {"list": []},
+  "annotations": {"list": []},
+  "panels": [
+    {"type": "row", "title": "Is the model still looking at the same world?", "gridPos": {"x": 0, "y": 0, "w": 24, "h": 1}, "collapsed": false, "panels": []},
+    {
+      "type": "stat", "title": "Drift score (max PSI)",
+      "description": "<0.10 stable, 0.10–0.25 moderate, >=0.25 significant.",
+      "gridPos": {"x": 0, "y": 1, "w": 5, "h": 5},
+      "datasource": {"type": "prometheus", "uid": "prometheus-ddm501"},
+      "targets": [{"expr": "ml_drift_score", "legendFormat": "PSI", "refId": "A", "instant": true}],
+      "fieldConfig": {"defaults": {"unit": "none", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 0.1}, {"color": "red", "value": 0.25}]}}, "overrides": []}
+    },
+    {
+      "type": "stat", "title": "Window size", "gridPos": {"x": 5, "y": 1, "w": 5, "h": 5},
+      "datasource": {"type": "prometheus", "uid": "prometheus-ddm501"},
+      "targets": [{"expr": "ml_drift_window_size", "legendFormat": "requests", "refId": "A", "instant": true}],
+      "fieldConfig": {"defaults": {"thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 200}]}}, "overrides": []}
+    },
+    {
+      "type": "stat", "title": "Fairness gap", "gridPos": {"x": 10, "y": 1, "w": 5, "h": 5},
+      "datasource": {"type": "prometheus", "uid": "prometheus-ddm501"},
+      "targets": [{"expr": "ml_fairness_gap", "legendFormat": "gap", "refId": "A", "instant": true}],
+      "fieldConfig": {"defaults": {"unit": "percentunit", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 0.1}]}}, "overrides": []}
+    },
+    {
+      "type": "stat", "title": "Decline rate", "gridPos": {"x": 15, "y": 1, "w": 5, "h": 5},
+      "datasource": {"type": "prometheus", "uid": "prometheus-ddm501"},
+      "targets": [{"expr": "sum(rate(ml_decisions_total{decision=\"DECLINE\"}[5m])) / clamp_min(sum(rate(ml_decisions_total[5m])), 0.001)", "legendFormat": "declined", "refId": "A", "instant": true}],
+      "fieldConfig": {"defaults": {"unit": "percentunit"}, "overrides": []}
+    },
+    {
+      "type": "stat", "title": "Model loaded", "gridPos": {"x": 20, "y": 1, "w": 4, "h": 5},
+      "datasource": {"type": "prometheus", "uid": "prometheus-ddm501"},
+      "targets": [{"expr": "ml_model_loaded", "legendFormat": "loaded", "refId": "A", "instant": true}],
+      "fieldConfig": {"defaults": {"thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]}}, "overrides": []}
+    },
+    {"type": "row", "title": "Input drift", "gridPos": {"x": 0, "y": 6, "w": 24, "h": 1}, "collapsed": false, "panels": []},
+    {
+      "type": "timeseries", "title": "PSI per feature", "gridPos": {"x": 0, "y": 7, "w": 16, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "prometheus-ddm501"},
+      "targets": [{"expr": "ml_feature_drift_psi", "legendFormat": "{{feature}}", "refId": "A"}],
+      "fieldConfig": {"defaults": {"custom": {"lineWidth": 2, "fillOpacity": 5}}, "overrides": []}
+    },
+    {
+      "type": "timeseries", "title": "Drift score against thresholds", "gridPos": {"x": 16, "y": 7, "w": 8, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "prometheus-ddm501"},
+      "targets": [{"expr": "ml_drift_score", "legendFormat": "max PSI", "refId": "A"}],
+      "fieldConfig": {"defaults": {"thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 0.1}, {"color": "red", "value": 0.25}]}}, "overrides": []}
+    },
+    {"type": "row", "title": "What the model is saying", "gridPos": {"x": 0, "y": 15, "w": 24, "h": 1}, "collapsed": false, "panels": []},
+    {
+      "type": "timeseries", "title": "Score distribution (p50 / p90 / p99)", "gridPos": {"x": 0, "y": 16, "w": 12, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "prometheus-ddm501"},
+      "targets": [
+        {"expr": "histogram_quantile(0.50, sum(rate(ml_prediction_score_bucket[5m])) by (le))", "legendFormat": "p50", "refId": "A"},
+        {"expr": "histogram_quantile(0.90, sum(rate(ml_prediction_score_bucket[5m])) by (le))", "legendFormat": "p90", "refId": "B"},
+        {"expr": "histogram_quantile(0.99, sum(rate(ml_prediction_score_bucket[5m])) by (le))", "legendFormat": "p99", "refId": "C"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "percentunit"}, "overrides": []}
+    },
+    {
+      "type": "timeseries", "title": "Decision mix", "gridPos": {"x": 12, "y": 16, "w": 12, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "prometheus-ddm501"},
+      "targets": [{"expr": "sum by (decision) (rate(ml_decisions_total[5m]))", "legendFormat": "{{decision}}", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []}
+    },
+    {"type": "row", "title": "Fairness", "gridPos": {"x": 0, "y": 24, "w": 24, "h": 1}, "collapsed": false, "panels": []},
+    {
+      "type": "timeseries", "title": "Selection rate by group", "gridPos": {"x": 0, "y": 25, "w": 12, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "prometheus-ddm501"},
+      "targets": [{"expr": "ml_selection_rate", "legendFormat": "group {{group}}", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "percentunit"}, "overrides": []}
+    },
+    {
+      "type": "timeseries", "title": "Fairness gap", "gridPos": {"x": 12, "y": 25, "w": 12, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "prometheus-ddm501"},
+      "targets": [{"expr": "ml_fairness_gap", "legendFormat": "gap", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "percentunit", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 0.1}]}}, "overrides": []}
+    },
+    {"type": "row", "title": "Cost of explaining", "gridPos": {"x": 0, "y": 33, "w": 24, "h": 1}, "collapsed": false, "panels": []},
+    {
+      "type": "timeseries", "title": "Explanation latency p95", "gridPos": {"x": 0, "y": 34, "w": 12, "h": 7},
+      "datasource": {"type": "prometheus", "uid": "prometheus-ddm501"},
+      "targets": [{"expr": "histogram_quantile(0.95, sum(rate(ml_explain_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p95", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []}
+    },
+    {
+      "type": "timeseries", "title": "Prediction errors by type", "gridPos": {"x": 12, "y": 34, "w": 12, "h": 7},
+      "datasource": {"type": "prometheus", "uid": "prometheus-ddm501"},
+      "targets": [{"expr": "sum by (error_type) (rate(ml_prediction_errors_total[5m]))", "legendFormat": "{{error_type}}", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []}
+    }
+  ]
+}

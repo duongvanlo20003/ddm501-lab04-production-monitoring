@@ -1,0 +1,46 @@
+# Prometheus configuration for the credit risk service.
+#
+# scrape_interval is the resolution of every graph and the granularity of
+# every alert. 10s is short enough that a p95 latency spike is visible while
+# it is happening, and long enough that the /metrics handler — which
+# recomputes PSI over the whole window — is not the service's bottleneck.
+#
+# evaluation_interval is how often alert rules are checked. Keeping it equal
+# to scrape_interval means a rule never evaluates the same sample twice.
+
+global:
+  scrape_interval: 10s
+  evaluation_interval: 10s
+  external_labels:
+    course: ddm501
+    lab: "04"
+
+rule_files:
+  - /etc/prometheus/alerts/api_alerts.yml
+  - /etc/prometheus/alerts/ml_alerts.yml
+
+scrape_configs:
+  # The service under test. `api` is the compose service name; Docker's
+  # embedded DNS resolves it inside the network, which is why this works
+  # without any IP address anywhere in this file.
+  - job_name: credit-risk-api
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["api:8000"]
+        labels:
+          service: credit-risk-api
+          environment: lab
+
+  # Host-level metrics: CPU, memory, disk. Not ML-specific, but half of the
+  # incidents that look like "the model got slow" are really "the box ran out
+  # of memory", and without this you cannot tell the difference.
+  - job_name: node
+    static_configs:
+      - targets: ["node-exporter:9100"]
+
+  # Prometheus scraping itself. Useful for exactly one question, which you
+  # will eventually need to answer: is the monitoring system healthy, or is
+  # the flat line on the dashboard a flat line in reality?
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

@@ -1,0 +1,19 @@
+# Grafana datasource, provisioned as a file rather than clicked in the UI.
+#
+# This is the whole point of provisioning: a dashboard configured by hand
+# exists only in one person's container. A dashboard configured by file is in
+# version control, reviewable in a pull request, and identical on every
+# machine that runs docker compose up.
+
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: prometheus-ddm501
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      timeInterval: 10s

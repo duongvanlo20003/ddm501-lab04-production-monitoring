@@ -1,0 +1,14 @@
+# Tells Grafana to load every dashboard JSON in the mounted folder at start.
+apiVersion: 1
+
+providers:
+  - name: ddm501
+    orgId: 1
+    folder: DDM501
+    type: file
+    disableDeletion: false
+    allowUiUpdates: true
+    updateIntervalSeconds: 30
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false
